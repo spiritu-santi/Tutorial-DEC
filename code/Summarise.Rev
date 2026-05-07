@@ -11,7 +11,7 @@ tree = "Test_MCC_Master_Pruned.trees"
 mcc_tree <- readTrees(data_fp + tree)[1]
 
 f_burn = 0.10 # Fracción de burn-in
-n_states = 2 # el número de estados para los que queremos estimar la probabilidad posterior
+n_states = 3 # el número de estados para los que queremos estimar la probabilidad posterior
 
 state_trace_bg = readAncestralStateTrace(file=out_fp + fn + ".bg.states.txt", separator="\t") # la distribuciójn posterior de nuestro modelo DEC
 bg_tree = ancestralStateTree(tree = mcc_tree,

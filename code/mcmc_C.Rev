@@ -23,7 +23,7 @@ n_areas = 4 ##!!!!
 max_areas = 2 ##!!!
 
 # LA CADENA MCMC #
-n_gens      = 1000
+n_gens      = 5000
 n_burn      = 500
 tune_freq   = 10
 sample_freq = 10
@@ -34,15 +34,6 @@ n_runs      = 1
 mvi = 1
 
 # LOS DATOS #
-# Los taxa y el árbol #
-taxa_fn = "Test_taxa_pruned.tsv"
-taxa <- readTaxonData(data_fp + taxa_fn)
-n_taxa <- taxa.size()
-n_branches <- 2 * n_taxa - 2
-
-tree_init_fn = "Test_MCC_Master_Pruned.trees"
-fbd_tree <- readTrees(data_fp + tree_init_fn)[1]
-
 # Los datos de distribución #
 range_fn = "Test_range_pruned.nex"
 max_areas = max_areas
@@ -52,21 +43,31 @@ for (k in 0:max_areas) {n_states += choose(n_areas, k)}
 dat_bg_n = readDiscreteCharacterData(file = data_fp + range_fn)
 dat_bg_n = formatDiscreteCharacterData(dat_bg_n, "DEC", n_states)
 
-
-#Las epocas
-bg_times_fn = "Master.bg.times.txt"
+# Las epocas
+bg_times_fn = "Test.bg.times.txt"
 times_bg    = readDataDelimitedFile(file = data_fp + bg_times_fn, header=true, delimiter=",")
 n_bg_epochs = times_bg.size()
-conn_fn = "Master.area_graph.n" + n_areas
+conn_fn = "Test.area_graph.n" + n_areas
 
-for (i in 1:n_epochs_bg) {
+for (i in 1:n_bg_epochs) {
     connectivity_bg[i] = readDataDelimitedFile(file = data_fp + conn_fn + "." + i + ".csv", header=true, rownames=true, delimiter=",")
 }
+
+#state_desc = dat_bg_n.getStateDescriptions()
+#state_desc_str = "state,range\n"
+#for (i in 1:state_desc.size()){
+#    state_desc_str += (i-1) + "," + state_desc[i] + "\n"
+#}
+#write(state_desc_str, file=out_fn+".state_labels.txt")
+
+# El árbol #
+tree_init_fn = "Test_MCC_Master_Pruned.trees"
+fbd_tree <- readTrees(data_fp + tree_init_fn)[1]
 
 ##########################
 # Range Evolution model #
 ##########################
-source(code_fp + "model_biogeo.Rev")
+source(code_fp + "model_biogeo_3.Rev")
 
 ########
 # MCMC #

@@ -1,0 +1,731 @@
+.assign_state_labels_fix <-
+  function(t,
+           state_labels,
+           include_start_states,
+           labels_as_numbers,
+           missing_to_NA,
+           n_states = n_states) {
+    # what is the ancestral state name tag?
+    if (include_start_states) {
+      state_pos_str_base <- c("start_state_", "end_state_")
+    } else {
+      state_pos_str_base <- c("anc_state_")
+    }
+    
+    # send error if state_labels are provided without names
+    if (!is.null(state_labels) && is.null(names(state_labels))) {
+      stop(
+        "names(state_labels) must identify all unlabeled state names in
+        attributes(t)$data"
+      )
+    }
+    
+    # make matrix of all anc state values
+    col_num <- grep(state_pos_str_base[1], colnames(t@data))
+    if (length(state_pos_str_base) > 1) {
+      col_num2 <- grep(state_pos_str_base[2], colnames(t@data))
+      col_num <- c(col_num, col_num2)
+    }
+    pps <- grep("_pp", colnames(t@data))
+    columns <- col_num[!col_num %in% pps]
+    
+    # change ? to NA
+    if (missing_to_NA == TRUE) {
+      for (c in columns) {
+        x_state <- attributes(t)$data[[c]]
+        x_state <- as.vector(x_state)
+        x_state[x_state == "?"] <- "NA"
+        attributes(t)$data[[c]] <- x_state
+      }
+    }
+    
+    all_anc_states <- unique(c(as.matrix(t@data[, columns])))
+    
+    # send error if state labels are provided but there are any
+    # states without a corresponding state label
+    if (!is.null(state_labels) &&
+        any(all_anc_states %in% c("NA", names(state_labels)) == FALSE)) {
+      stop(paste0(
+        "names(state_labels): ",
+        paste0(names(state_labels), collapse = ", "),
+        " do not match data in tree file: ",
+        paste0(sort(all_anc_states[all_anc_states != "NA"]), collapse = ", ")
+      ))
+    }
+    
+    # generate state labels if none provided and not a chromosome analysis
+    if (is.null(state_labels) == TRUE & labels_as_numbers == FALSE) {
+      warning("State labels not provided by user.
+              Will be generated automatically.")
+      states <-
+        unique(unlist(attributes(t)$data[grepl(paste0("state_", "[0-9]$"),
+                                               names(attributes(t)$data))]))
+      states <- states[!states == "NA"]
+      states <- states[order(states)]
+      state_labels <- list()
+      for (i in seq_len(length(states))) {
+        state_labels[as.character(states[i])] <- LETTERS[i]
+      }
+      state_labels["other"] <- "other"
+    }
+    
+    # for chromosome analyses, just keep the names as is (numbers of chromos)
+    if (is.null(state_labels) == TRUE & labels_as_numbers == TRUE) {
+      state_labels <-
+        unique(unlist(attributes(t)$data[grepl(paste0("state_", "[0-9]$"),
+                                               names(attributes(t)$data))]))
+      state_labels <- state_labels[-which(state_labels == "NA")]
+      names(state_labels) <- state_labels
+    }
+    
+    # create list of ancestral state name tags
+    state_pos_str_to_update <-
+      c(unlist(lapply(1:n_states, function(x) {
+        paste(state_pos_str_base, x, sep = "")
+      })))
+    
+    # overwrite state labels
+    for (m in state_pos_str_to_update) {
+      # get the states
+      x_state <- attributes(t)$data[[m]]
+      x_state <- as.vector(x_state)
+      x_state_valid <- which(x_state != "NA")
+      x_state_invalid <- which(x_state == "NA")
+      x_state_tmp <-
+        unlist(lapply(x_state, function(z) {
+          state_labels[names(state_labels) == z]
+        }))
+      x_state[x_state_valid] <- x_state_tmp
+      x_state[x_state_invalid] <- NA
+      if (labels_as_numbers) {
+        x_state <-
+          factor(x_state, levels = as.character(sort(as.integer(
+            unique(state_labels)
+          ))))
+      }
+      attributes(t)$data[[m]] <- x_state
+    }
+    
+    # Just add the USED state_labels here
+    used_state_labels <-
+      na.omit(unique(c(as.matrix(t@data[, columns]))))
+    if (labels_as_numbers) {
+      attributes(t)$state_labels <-
+        factor(used_state_labels, levels = as.character(sort(as.integer(
+          unique(state_labels)
+        ))))
+    } else {
+      attributes(t)$state_labels <- sort(as.character(used_state_labels))
+    }
+    
+    return(t)
+  }
+
+
+.set_pp_factor_range_fix <-
+  function(t, include_start_states, n_states = 1) {
+    # what is the ancestral state name tag?
+    if (include_start_states) {
+      state_pos_str_base <- c("start_state_", "end_state_")
+    } else {
+      state_pos_str_base <- c("anc_state_")
+    }
+    
+    # create list of ancestral state name tags
+    state_pos_str_to_update <-
+      c(unlist(lapply(1:n_states, function(x) {
+        paste(state_pos_str_base, x, "_pp", sep = "")
+      })))
+    
+    # overwrite state labels
+    for (m in state_pos_str_to_update)
+    {
+      x_state <- attributes(t)$data[[m]]
+      #levels(x_state) = c(levels(x_state))
+      attributes(t)$data[[m]] <- x_state
+    }
+    return(t)
+  }
+
+
+processAncStates_fix <- function (path = file , state_labels = labs, labels_as_numbers = FALSE, 
+          missing_to_NA = TRUE,n_states = 2) 
+{
+  tree <- readTrees(path)
+  t <- tree[[1]][[1]]
+  include_start_states <- FALSE
+  if ("anc_state_1" %in% names(t@data)) {
+  }
+  else if ("start_state_1" %in% names(t@data) && "end_state_1" %in% 
+           names(t@data)) {
+    include_start_states <- TRUE
+  }
+  else {
+    stop("tree file does not contain expected state labels:\n                ['anc_state'] or ['start_state' and 'end_state']")
+  }
+  t <- .assign_state_labels_fix(t, state_labels, include_start_states, 
+                            labels_as_numbers, missing_to_NA,n_states)
+  t <- .set_pp_factor_range_fix(t, include_start_states)
+  return(t)
+}
+
+
+function (t, cladogenetic = FALSE, tip_labels = TRUE, tip_labels_size = 2, 
+          tip_labels_offset = 1, tip_labels_italics = FALSE, tip_labels_formatted = FALSE, 
+          tip_labels_remove_underscore = TRUE, tip_labels_states = FALSE, 
+          tip_labels_states_size = 2, tip_labels_states_offset = 0.1, 
+          node_labels_as = NULL, node_labels_size = 2, node_labels_offset = 0.1, 
+          pie_colors = "default", node_pie_size = 1, shoulder_pie_size = node_pie_size, 
+          tip_pies = TRUE, tip_pie_size = 0.5, node_pie_nudge_x = 0, 
+          node_pie_nudge_y = 0, tip_pie_nudge_x = node_pie_nudge_x, 
+          tip_pie_nudge_y = node_pie_nudge_y, shoulder_pie_nudge_x = node_pie_nudge_x, 
+          shoulder_pie_nudge_y = node_pie_nudge_y, state_transparency = 0.75, 
+          timeline = FALSE, geo = timeline, geo_units = list("epochs", 
+                                                             "periods"), time_bars = timeline, ...) 
+{
+  if (!methods::is(t, "treedata")) 
+    stop("t should be a treedata object")
+  if (is.logical(cladogenetic) == FALSE) 
+    stop("cladogenetic should be TRUE or FALSE")
+  if (is.logical(tip_labels) == FALSE) 
+    stop("tip_labels should be TRUE or FALSE")
+  if (is.numeric(tip_labels_size) == FALSE) 
+    stop("tip_labels_size should be a number")
+  if (is.numeric(tip_labels_offset) == FALSE) 
+    stop("tip_labels_offset should be a number")
+  if (is.logical(tip_labels_italics) == FALSE) 
+    stop("tip_labels_italics should be TRUE or FALSE")
+  if (is.logical(tip_labels_formatted) == FALSE) 
+    stop("tip_labels_formatted should be TRUE or FALSE")
+  if (tip_labels_italics == TRUE & tip_labels_formatted == 
+      TRUE) 
+    stop("tip_labels_italics and tip_labels_formatted may not both be TRUE")
+  if (is.logical(tip_labels_remove_underscore) == FALSE) 
+    stop("tip_labels_remove_underscore should be TRUE or FALSE")
+  if (is.logical(tip_labels_states) == FALSE) 
+    stop("tip_labels_states should be TRUE or FALSE")
+  if (is.numeric(tip_labels_states_size) == FALSE) 
+    stop("tip_labels_states_size should be a number")
+  if (is.numeric(tip_labels_states_offset) == FALSE) 
+    stop("tip_labels_states_offsetshould be a number")
+  if (is.null(node_labels_as) == FALSE) {
+    node_labels_as <- match.arg(node_labels_as, choices = c("state", 
+                                                            "state_posterior", "node_posterior"))
+  }
+  if (is.numeric(node_labels_size) == FALSE) 
+    stop("node_labels_size should be a number")
+  if (is.numeric(node_labels_offset) == FALSE) 
+    stop("node_labels_offset should be a number")
+  if (is.character(pie_colors) == FALSE) 
+    stop("pie_colors should be 'default' or valid color(s)")
+  if (pie_colors[1] != "default" & any(.isColor(pie_colors) == 
+                                       FALSE)) 
+    stop("pie_colors should be valid color(s)")
+  if (any(is.numeric(node_pie_size) == FALSE)) 
+    stop("node_pie_size should be a single number")
+  if (length(node_pie_size) > 1) 
+    stop("node_pie_size should be a single number")
+  if (any(is.numeric(shoulder_pie_size) == FALSE)) 
+    stop("shoulder_pie_size should be a single number")
+  if (length(shoulder_pie_size) > 1) 
+    stop("shoulder_pie_size should be a single number")
+  if (any(is.numeric(tip_pie_size) == FALSE)) 
+    stop("tip_pie_size should be a single number")
+  if (length(tip_pie_size) > 1) 
+    stop("tip_pie_size should be a single number")
+  if (is.numeric(node_pie_nudge_x) == FALSE) 
+    stop("node_pie_nudge_x should be a single number")
+  if (is.numeric(node_pie_nudge_y) == FALSE) 
+    stop("node_pie_nudge_y should be a single number")
+  if (is.numeric(tip_pie_nudge_x) == FALSE) 
+    stop("tip_pie_nudge_x should be a single number")
+  if (is.numeric(tip_pie_nudge_y) == FALSE) 
+    stop("tip_pie_nudge_y should be a single number")
+  if (is.numeric(shoulder_pie_nudge_x) == FALSE) 
+    stop("shoulder_pie_nudge_x should be a single number")
+  if (is.numeric(shoulder_pie_nudge_y) == FALSE) 
+    stop("shoulder_pie_nudge_y should be a single number")
+  if (length(node_pie_nudge_x) != 1) 
+    stop("node_pie_nudge_x should be a single number")
+  if (length(node_pie_nudge_y) != 1) 
+    stop("node_pie_nudge_y should be a single number")
+  if (length(tip_pie_nudge_x) != 1) 
+    stop("tip_pie_nudge_x should be a single number")
+  if (length(tip_pie_nudge_y) != 1) 
+    stop("tip_pie_nudge_y should be a single number")
+  if (length(shoulder_pie_nudge_x) != 1) 
+    stop("shoulder_pie_nudge_x should be a single number")
+  if (length(shoulder_pie_nudge_y) != 1) 
+    stop("shoulder_pie_nudge_y should be a single number")
+  if (is.numeric(state_transparency) == FALSE) 
+    stop("state_transparency should be a number between 0 - 1")
+  if (state_transparency < 0 || state_transparency > 1) 
+    stop("state_transparency should be a number between 0 - 1")
+  if (is.logical(timeline) == FALSE) 
+    stop("timeline should be TRUE or FALSE")
+  if (is.list(geo_units)) {
+    if (length(geo_units) != 2) 
+      stop("geo_units should be 'periods', 'epochs', 'stages', 'eons', \n         'eras', or a list of two of those units, such as:\n        list('epochs','periods')")
+    if (geo_units[[1]] %in% c("periods", "epochs", "stages", 
+                              "eons", "eras") == FALSE) 
+      stop("geo_units should be 'periods', 'epochs', 'stages', 'eons', \n         'eras', or a list of two of those units, such as:\n        list('epochs','periods')")
+    if (geo_units[[2]] %in% c("periods", "epochs", "stages", 
+                              "eons", "eras") == FALSE) 
+      stop("geo_units should be 'periods', 'epochs', 'stages', 'eons', \n         'eras', or a list of two of those units, such as:\n        list('epochs','periods')")
+  }
+  else {
+    if (geo_units %in% c("periods", "epochs", "stages", "eons", 
+                         "eras") == FALSE) 
+      stop("geo_units should be 'periods', 'epochs', 'stages', 'eons', \n         'eras', or a list of two of those units, such as:\n        list('epochs','periods')")
+  }
+  p <- ggtree::ggtree(t, ...)
+  tmp <- tempdir()
+  tree <- attributes(t)$phylo
+  tree_height <- max(phytools::nodeHeights(t@phylo))
+  n_node <- ape::Nnode(tree, internal.only = FALSE)
+  ntips <- length(tree$tip.label)
+  node_idx <- (ntips + 1):n_node
+  tip_idx <- 1:ntips
+  all_idx <- 1:n_node
+  tip_pie_nudge_x <- -tip_pie_nudge_x
+  node_pie_nudge_x <- -node_pie_nudge_x
+  shoulder_pie_nudge_x <- -shoulder_pie_nudge_x
+  state_labels <- as.factor(attributes(t)$state_labels)
+  node_pie_size <- node_pie_size/30
+  shoulder_pie_size <- shoulder_pie_size/30
+  tip_pie_size <- tip_pie_size/30
+  if (cladogenetic == TRUE) {
+    state_pos_str_base <- c("end_state_", "start_state_")
+  }
+  else if (cladogenetic == FALSE & "start_state_1" %in% colnames(p$data)) {
+    state_pos_str_base <- "end_state_"
+  }
+  else if (cladogenetic == FALSE & "anc_state_1" %in% colnames(p$data)) {
+    state_pos_str_base <- "anc_state_"
+  }
+  if (pie_colors[1] == "default") {
+    nstates <- length(state_labels)
+    if (nstates <= 12) {
+      pie_colors <- colFun(nstates)
+    }
+    else {
+      pie_colors <- (grDevices::colorRampPalette(colFun(12)))(nstates)
+    }
+  }
+  if (pie_colors[1] != "default" & length(pie_colors) < length(state_labels)) {
+    stop(paste0("You provided fewer colors in node_color\n                than states in your dataset. There are ", 
+                length(state_labels), " states and you provide ", 
+                length(pie_colors), " colors."))
+  }
+  if (is.null(names(pie_colors))) {
+    names(pie_colors) <- state_labels
+  }
+  otherpp <- as.numeric(dplyr::pull(p$data, var = paste0(state_pos_str_base[1], 
+                                                         "other_pp")))
+  if (sum(otherpp, na.rm = TRUE) == 0) {
+    if (any(pie_colors == "default")) {
+      nstates <- length(state_labels)
+      colors <- c(colFun(nstates))
+      names(colors) <- state_labels
+    }
+    else {
+      colors <- pie_colors
+    }
+  }
+  else if (sum(otherpp, na.rm = TRUE) != 0) {
+    state_labels <- as.factor(c(as.character(t@state_labels), 
+                                "other"))
+    if ("anc_state_" %in% state_pos_str_base) {
+      p$data$anc_state_other <- "other"
+    }
+    if ("end_state_" %in% state_pos_str_base) {
+      p$data$end_state_other <- "other"
+    }
+    if (pie_colors[1] != "default") {
+      pc_names <- names(pie_colors)
+      pie_colors <- c(pie_colors, "grey50")
+      names(pie_colors) <- c(pc_names, "other")
+    }
+    if (any(pie_colors == "default")) {
+      nstates <- length(state_labels) - 1
+      colors <- c(colFun(nstates), "grey50")
+      names(colors) <- state_labels
+    }
+    else {
+      colors <- pie_colors
+    }
+  }
+  if (tip_labels_remove_underscore) {
+    p$data$label <- gsub("_", " ", p$data$label)
+  }
+  if (timeline == TRUE) {
+    max_age <- tree_height
+    if (max_age > 100) {
+      interval <- 50
+    }
+    else {
+      interval <- 10
+    }
+    dx <- max_age%%interval
+    tick_height <- ntips/100
+    if (geo == TRUE) {
+      if (tree_height > 50) {
+        skipit <- c("Quaternary", "Holocene", "Late Pleistocene")
+      }
+      else {
+        skipit <- c("Holocene", "Late Pleistocene")
+      }
+      if (length(geo_units) == 1) {
+        p <- p + deeptime::coord_geo(dat = geo_units, 
+                                     pos = lapply(seq_len(length(geo_units)), function(x) "bottom"), 
+                                     size = lapply(seq_len(length(geo_units)), function(x) tip_labels_size), 
+                                     xlim = c(-tree_height, tree_height/2), ylim = c(-tick_height * 
+                                                                                       5, ntips * 1.1), height = grid::unit(4, "line"), 
+                                     skip = skipit, abbrv = FALSE, rot = 90, center_end_labels = TRUE, 
+                                     bord = c("right", "top", "bottom"), neg = TRUE)
+      }
+      else if (length(geo_units) == 2) {
+        p <- p + deeptime::coord_geo(dat = geo_units, 
+                                     pos = lapply(seq_len(length(geo_units)), function(x) "bottom"), 
+                                     size = lapply(seq_len(length(geo_units)), function(x) tip_labels_size), 
+                                     xlim = c(-tree_height, tree_height/2), ylim = c(-tick_height * 
+                                                                                       5, ntips * 1.1), skip = skipit, center_end_labels = TRUE, 
+                                     bord = c("right", "top", "bottom"), neg = TRUE)
+      }
+    }
+    p <- p + ggplot2::scale_x_continuous(name = "Age (Ma)", 
+                                         limits = c(-tree_height, tree_height/2))
+    p <- ggtree::revts(p)
+    xline <- pretty(c(0, max_age))[pretty(c(0, max_age)) < 
+                                     max_age]
+    df <- data.frame(x = -xline, y = rep(-tick_height * 5, 
+                                         length(xline)), vx = -xline, vy = rep(-tick_height * 
+                                                                                 5 + tick_height, length(xline)))
+    p <- p + ggplot2::geom_segment(ggplot2::aes(x = 0, y = -tick_height * 
+                                                  5, xend = -max_age, yend = -tick_height * 5)) + ggplot2::geom_segment(data = df, 
+                                                                                                                        ggplot2::aes(x = x, y = y, xend = vx, yend = vy)) + 
+      ggplot2::annotate("text", x = -rev(xline), y = -tick_height * 
+                          5 + tick_height * 2, label = rev(xline), size = tip_labels_size)
+    if (time_bars) {
+      if (geo) {
+        if ("epochs" %in% geo_units) {
+          x_pos <- -rev(c(0, deeptime::get_scale_data("epochs")$max_age))
+        }
+        else {
+          x_pos <- -rev(c(0, deeptime::get_scale_data("periods")$max_age))
+        }
+      }
+      else if (!geo) {
+        x_pos <- -rev(xline)
+      }
+      for (k in 2:(length(x_pos))) {
+        box_col <- "gray92"
+        if (k%%2 == 1) 
+          box_col <- "white"
+        box <- ggplot2::geom_rect(xmin = x_pos[k - 1], 
+                                  xmax = x_pos[k], ymin = -tick_height * 5, ymax = ntips, 
+                                  fill = box_col)
+        p <- gginnards::append_layers(p, box, position = "bottom")
+      }
+    }
+    if (tip_labels) {
+      tot <- max_age + tree_height/2
+      p <- p + ggplot2::theme(axis.title.x = ggplot2::element_text(hjust = max_age/(2 * 
+                                                                                      tot)))
+    }
+  }
+  if (tip_labels == TRUE) {
+    if (tip_labels_italics == TRUE) {
+      p <- p + ggtree::geom_tiplab(ggplot2::aes(label = paste0("italic(`", 
+                                                               label, "`)")), size = tip_labels_size, offset = tip_labels_offset, 
+                                   parse = TRUE)
+    }
+    else if (tip_labels_formatted == TRUE) {
+      p <- p + ggtree::geom_tiplab(ggplot2::aes(label = label), 
+                                   size = tip_labels_size, offset = tip_labels_offset, 
+                                   parse = TRUE)
+    }
+    else {
+      p <- p + ggtree::geom_tiplab(size = tip_labels_size, 
+                                   offset = tip_labels_offset)
+    }
+  }
+  if (cladogenetic == TRUE) {
+    p <- p + ggtree::geom_nodepoint(ggtree::aes(colour = factor(end_state_1), 
+                                                size = 0), na.rm = TRUE, alpha = 0)
+    p <- p + ggtree::geom_nodepoint(ggtree::aes(colour = factor(end_state_2), 
+                                                size = 0), na.rm = TRUE, alpha = 0)
+    p <- p + ggtree::geom_nodepoint(ggtree::aes(colour = factor(end_state_3), 
+                                                size = 0), na.rm = TRUE, alpha = 0)
+    p <- p + ggtree::geom_tippoint(ggtree::aes(colour = factor(end_state_1), 
+                                               size = 0), na.rm = TRUE, alpha = 0)
+    p <- p + ggtree::geom_tippoint(ggtree::aes(colour = factor(end_state_2), 
+                                               size = 0), na.rm = TRUE, alpha = 0)
+    p <- p + ggtree::geom_tippoint(ggtree::aes(colour = factor(end_state_3), 
+                                               size = 0), na.rm = TRUE, alpha = 0)
+    if ("other" %in% state_labels) {
+      p <- p + ggtree::geom_nodepoint(ggtree::aes(colour = factor(end_state_other), 
+                                                  size = 0), na.rm = TRUE, alpha = 0)
+    }
+    p <- p + ggtree::geom_nodepoint(ggtree::aes(colour = factor(start_state_1), 
+                                                size = 0), na.rm = TRUE, alpha = 0)
+    p <- p + ggtree::geom_nodepoint(ggtree::aes(colour = factor(start_state_2), 
+                                                size = 0), na.rm = TRUE, alpha = 0)
+    p <- p + ggtree::geom_nodepoint(ggtree::aes(colour = factor(start_state_3), 
+                                                size = 0), na.rm = TRUE, alpha = 0)
+  }
+  else if (cladogenetic == FALSE & "anc_state_1" %in% colnames(t@data)) {
+    p <- p + ggtree::geom_nodepoint(ggtree::aes(colour = factor(anc_state_1), 
+                                                size = 0), na.rm = TRUE, alpha = 0)
+    p <- p + ggtree::geom_nodepoint(ggtree::aes(colour = factor(anc_state_2), 
+                                                size = 0), na.rm = TRUE, alpha = 0)
+    p <- p + ggtree::geom_nodepoint(ggtree::aes(colour = factor(anc_state_3), 
+                                                size = 0), na.rm = TRUE, alpha = 0)
+    p <- p + ggtree::geom_tippoint(ggtree::aes(colour = factor(anc_state_1), 
+                                               size = 0), na.rm = TRUE, alpha = 0)
+    p <- p + ggtree::geom_tippoint(ggtree::aes(colour = factor(anc_state_2), 
+                                               size = 0), na.rm = TRUE, alpha = 0)
+    p <- p + ggtree::geom_tippoint(ggtree::aes(colour = factor(anc_state_3), 
+                                               size = 0), na.rm = TRUE, alpha = 0)
+    if ("other" %in% state_labels) {
+      p <- p + ggtree::geom_nodepoint(ggtree::aes(colour = factor(anc_state_other), 
+                                                  size = 0), na.rm = TRUE, alpha = 0)
+    }
+  }
+  else {
+    p <- p + ggtree::geom_nodepoint(ggtree::aes(colour = factor(end_state_1), 
+                                                size = 0), na.rm = TRUE, alpha = 0)
+    p <- p + ggtree::geom_nodepoint(ggtree::aes(colour = factor(end_state_2), 
+                                                size = 0), na.rm = TRUE, alpha = 0)
+    p <- p + ggtree::geom_nodepoint(ggtree::aes(colour = factor(end_state_3), 
+                                                size = 0), na.rm = TRUE, alpha = 0)
+    p <- p + ggtree::geom_tippoint(ggtree::aes(colour = factor(end_state_1), 
+                                               size = 0), na.rm = TRUE, alpha = 0)
+    p <- p + ggtree::geom_tippoint(ggtree::aes(colour = factor(end_state_2), 
+                                               size = 0), na.rm = TRUE, alpha = 0)
+    p <- p + ggtree::geom_tippoint(ggtree::aes(colour = factor(end_state_3), 
+                                               size = 0), na.rm = TRUE, alpha = 0)
+    if ("other" %in% state_labels) {
+      p <- p + ggtree::geom_nodepoint(ggtree::aes(colour = factor(end_state_other), 
+                                                  size = 0), na.rm = TRUE, alpha = 0)
+    }
+  }
+  if (is.null(names(colors))) {
+    breaks <- levels(state_labels)
+  }
+  else {
+    breaks <- names(colors)
+  }
+  p <- p + ggplot2::scale_color_manual(values = colors, breaks = breaks)
+  p <- p + ggplot2::guides(colour = ggplot2::guide_legend("State", 
+                                                          override.aes = list(size = 4, alpha = 1)), order = 1)
+  p <- p + ggplot2::guides(size = "none")
+  theme_transparent <- ggimage::theme_transparent()
+  if (cladogenetic == TRUE) {
+    state_probs <- .build_state_probs(t, state_labels, include_start_states = TRUE)
+    dat_state_end <- state_probs$end
+    dat_state_start <- state_probs$start
+    pies_start <- .nodepie(dat_state_start, cols = 1:(ncol(dat_state_start) - 
+                                                        1), color = colors, alpha = state_transparency)
+    pies_end <- .nodepie(dat_state_end, cols = 1:(ncol(dat_state_end) - 
+                                                    1), color = colors, alpha = state_transparency)
+    zeros <- which(dplyr::pull(p$data, "x") == 0)
+    p$data[zeros, "x"] <- 1e-04
+    pies_end_to_plot <- pies_end[node_idx]
+    results_end <- list()
+    for (i in seq_len(length(pies_end_to_plot))) {
+      ggplot2::ggsave(paste0(tmp, "/.temp.png"), plot = pies_end_to_plot[[i]], 
+                      bg = "transparent", width = 3, height = 3, units = "cm", 
+                      dpi = 200)
+      pie <- png::readPNG(paste0(tmp, "/.temp.png"))
+      results_end[[i]] <- ggplotify::as.ggplot(grid::rasterGrob(pie, 
+                                                                interpolate = TRUE))
+    }
+    df_pies_end <- p$data[p$data$isTip == FALSE, ]
+    df_pies_end$x <- df_pies_end$x - node_pie_nudge_x
+    df_pies_end$y <- df_pies_end$y - node_pie_nudge_y
+    results_start <- list()
+    for (i in seq_len(length(pies_start))) {
+      ggplot2::ggsave(paste0(tmp, "/.temp.png"), plot = pies_start[[i]], 
+                      bg = "transparent", width = 3, height = 3, units = "cm", 
+                      dpi = 200)
+      pie <- png::readPNG(paste0(tmp, "/.temp.png"))
+      results_start[[i]] <- ggplotify::as.ggplot(grid::rasterGrob(pie, 
+                                                                  interpolate = TRUE))
+    }
+    df_pies_start <- p$data
+    df_pies_start$x <- df_pies_start$x[match(df_pies_start$parent, 
+                                             df_pies_start$node)]
+    df_pies_start$x <- df_pies_start$x - shoulder_pie_nudge_x
+    df_pies_start$y <- df_pies_start$y - shoulder_pie_nudge_y
+    if (tip_pies == TRUE) {
+      pies_tip <- pies_end[tip_idx]
+      results_tip <- list()
+      for (i in seq_len(length(pies_tip))) {
+        ggplot2::ggsave(paste0(tmp, "/.temp.png"), plot = pies_end[[i]], 
+                        bg = "transparent", width = 3, height = 3, 
+                        units = "cm", dpi = 200)
+        pie <- png::readPNG(paste0(tmp, "/.temp.png"))
+        results_tip[[i]] <- ggplotify::as.ggplot(grid::rasterGrob(pie, 
+                                                                  interpolate = TRUE))
+      }
+      df_pies_tip <- p$data[p$data$isTip == TRUE, ]
+      df_pies_tip$x <- df_pies_tip$x - tip_pie_nudge_x
+      df_pies_tip$y <- df_pies_tip$y - tip_pie_nudge_y
+    }
+    if (tip_pies == TRUE) {
+      df_pies <- rbind(df_pies_end, df_pies_start, df_pies_tip)
+      results <- c(results_end, results_start, results_tip)
+      sizes <- c(rep(node_pie_size, nrow(df_pies_end)), 
+                 rep(shoulder_pie_size, nrow(df_pies_start)), 
+                 rep(tip_pie_size, nrow(df_pies_tip)))
+    }
+    else {
+      df_pies <- rbind(df_pies_end, df_pies_start)
+      results <- c(results_end, results_start)
+      sizes <- c(rep(node_pie_size, nrow(df_pies_end)), 
+                 rep(shoulder_pie_size, nrow(df_pies_start)))
+    }
+    p <- p + ggpp::geom_plot(data = df_pies, mapping = ggplot2::aes(x = x, 
+                                                                    y = y, label = results), vp.width = sizes, vp.height = sizes, 
+                             hjust = 0.5, vjust = 0.5)
+  }
+  else {
+    dat_state_anc <- .build_state_probs(t, state_labels, 
+                                        include_start_states = FALSE)[[1]]
+    if (sum(otherpp, na.rm = TRUE) == 0) {
+      dat_state_anc$other <- NULL
+    }
+    pies_anc <- .nodepie(dat_state_anc, cols = 1:(ncol(dat_state_anc) - 
+                                                    1), color = colors, alpha = state_transparency)
+    zeros <- which(dplyr::pull(p$data, "x") == 0)
+    p$data[zeros, "x"] <- 1e-04
+    pies_anc_to_plot <- pies_anc[node_idx]
+    results_anc <- list()
+    for (i in seq_len(length(pies_anc_to_plot))) {
+      ggplot2::ggsave(paste0(tmp, "/.temp.png"), plot = pies_anc_to_plot[[i]], 
+                      bg = "transparent", width = 3, height = 3, units = "cm", 
+                      dpi = 200)
+      pie <- png::readPNG(paste0(tmp, "/.temp.png"))
+      results_anc[[i]] <- ggplotify::as.ggplot(grid::rasterGrob(pie, 
+                                                                interpolate = TRUE))
+    }
+    df_pies_anc <- p$data[p$data$isTip == FALSE, ]
+    df_pies_anc$x <- df_pies_anc$x - node_pie_nudge_x
+    df_pies_anc$y <- df_pies_anc$y - node_pie_nudge_y
+    if (tip_pies == TRUE) {
+      pies_tip <- pies_anc[tip_idx]
+      results_tip <- list()
+      for (i in seq_len(length(pies_tip))) {
+        ggplot2::ggsave(paste0(tmp, "/.temp.png"), plot = pies_tip[[i]], 
+                        bg = "transparent", width = 3, height = 3, 
+                        units = "cm", dpi = 200)
+        pie <- png::readPNG(paste0(tmp, "/.temp.png"))
+        results_tip[[i]] <- ggplotify::as.ggplot(grid::rasterGrob(pie, 
+                                                                  interpolate = TRUE))
+      }
+      df_pies_tip <- p$data[p$data$isTip == TRUE, ]
+      df_pies_tip$x <- df_pies_tip$x - tip_pie_nudge_x
+      df_pies_tip$y <- df_pies_tip$y - tip_pie_nudge_y
+    }
+    if (tip_pies == TRUE) {
+      df_pies <- rbind(df_pies_anc, df_pies_tip)
+      results <- c(results_anc, results_tip)
+      sizes <- c(rep(node_pie_size, nrow(df_pies_anc)), 
+                 rep(tip_pie_size, nrow(df_pies_tip)))
+    }
+    else {
+      df_pies <- df_pies_anc
+      results <- results_anc
+      sizes <- rep(node_pie_size, nrow(df_pies_anc))
+    }
+    p <- p + ggpp::geom_plot(data = df_pies, mapping = ggplot2::aes(x = x, 
+                                                                    y = y, label = results), vp.width = sizes, vp.height = sizes, 
+                             hjust = 0.5, vjust = 0.5)
+  }
+  if (is.null(node_labels_as) == FALSE) {
+    if (cladogenetic == TRUE) {
+      x <- ggtree::fortify(tree)$x
+      y <- ggtree::fortify(tree)$y
+      x_anc <- numeric(n_node)
+      node_index <- numeric(n_node)
+      for (i in 1:n_node) {
+        if (.getParent(tree, i) != 0) {
+          x_anc[i] <- x[.getParent(tree, i)]
+          node_index[i] <- i
+        }
+      }
+      shoulder_data <- data.frame(node = node_index, x_anc = x_anc, 
+                                  y = y)
+      if (timeline == TRUE) {
+        shoulder_data$x_anc <- shoulder_data$x_anc - 
+          tree_height
+      }
+      `%<+%` <- ggtree::`%<+%`
+      p <- p %<+% shoulder_data
+    }
+    if (node_labels_as == "state") {
+      if (cladogenetic == TRUE) {
+        p <- p + ggtree::geom_text2(ggplot2::aes(label = end_state_1, 
+                                                 subset = !isTip), hjust = 1, nudge_x = node_labels_offset, 
+                                    size = node_labels_size) + ggtree::geom_text(ggplot2::aes(label = start_state_1, 
+                                                                                              x = x_anc, y = y), hjust = 0, nudge_x = node_labels_offset, 
+                                                                                 size = node_labels_size, na.rm = TRUE)
+      }
+      else if (cladogenetic == FALSE & state_pos_str_base[1] == 
+               "anc_state_") {
+        p <- p + ggtree::geom_text2(ggplot2::aes(label = anc_state_1, 
+                                                 subset = !isTip), hjust = 1, nudge_x = node_labels_offset, 
+                                    size = node_labels_size)
+      }
+      else if (cladogenetic == FALSE & state_pos_str_base != 
+               "anc_state_") {
+        p <- p + ggtree::geom_text2(ggplot2::aes(label = end_state_1, 
+                                                 subset = !isTip), hjust = 1, nudge_x = node_labels_offset, 
+                                    size = node_labels_size)
+      }
+    }
+    else if (node_labels_as == "state_posterior") {
+      if (cladogenetic == TRUE) {
+        p <- p + ggtree::geom_text2(ggplot2::aes(label = .convertAndRound(end_state_1_pp), 
+                                                 subset = !isTip), hjust = 1, nudge_x = node_labels_offset, 
+                                    size = node_labels_size) + ggtree::geom_text(ggplot2::aes(label = .convertAndRound(start_state_1_pp), 
+                                                                                              x = x_anc, y = y), hjust = 0, nudge_x = node_labels_offset, 
+                                                                                 size = node_labels_size, na.rm = TRUE)
+      }
+      else if (cladogenetic == FALSE & state_pos_str_base[1] == 
+               "anc_state_") {
+        p <- p + ggtree::geom_text2(ggplot2::aes(label = .convertAndRound(anc_state_1_pp), 
+                                                 subset = !isTip), hjust = 1, nudge_x = node_labels_offset, 
+                                    size = node_labels_size)
+      }
+      else if (cladogenetic == FALSE & state_pos_str_base != 
+               "anc_state_") {
+        p <- p + ggtree::geom_text2(ggplot2::aes(label = .convertAndRound(end_state_1_pp), 
+                                                 subset = !isTip), hjust = 1, nudge_x = node_labels_offset, 
+                                    size = node_labels_size)
+      }
+    }
+    else if (node_labels_as == "node_posterior") {
+      p <- p + ggtree::geom_nodelab(ggplot2::aes(label = .convertAndRound(posterior)), 
+                                    hjust = 1, nudge_x = node_labels_offset, size = node_labels_size)
+    }
+  }
+  if (tip_labels_states == TRUE) {
+    if (state_pos_str_base[1] == "anc_state_") {
+      p <- p + ggtree::geom_tiplab(ggplot2::aes(label = anc_state_1), 
+                                   hjust = "center", offset = tip_labels_states_offset, 
+                                   size = tip_labels_states_size)
+    }
+    else {
+      p <- p + ggtree::geom_tiplab(ggplot2::aes(label = end_state_1), 
+                                   hjust = "center", offset = tip_labels_states_offset, 
+                                   size = tip_labels_states_size)
+    }
+  }
+  if (tip_labels == TRUE & timeline == FALSE) {
+    p <- p + ggtree::xlim(0, tree_height + tree_height/2)
+  }
+  unlink(paste0(tmp, "/.temp.png"))
+  return(p)
+}

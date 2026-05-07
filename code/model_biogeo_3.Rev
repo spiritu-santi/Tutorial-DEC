@@ -53,7 +53,7 @@ P_DEC := fnDECCladoProbs(eventProbs= clado_event_probs,
 rf_bg_raw <- rep(1, n_states)
 rf_bg <- simplex(rf_bg_raw)
 
-m_bg ~ dnPhyloCTMCClado(tree = fbd_tree, Q = Q_DEC, rootFrequencies=rf_bg, cladoProbs=P_DEC, branchRates=clock_bg, nSites=1, type="NaturalNumbers")
+m_bg ~ dnPhyloCTMCClado(tree = fbd_tree, Q = Q_DEC_epoch, rootFrequencies=rf_bg, cladoProbs=P_DEC, branchRates=clock_bg, nSites=1, type="NaturalNumbers")
 
 # Por último 'sujetamos' los datos de distribución a nuestro modelo.
 m_bg.clamp(dat_bg_n)
